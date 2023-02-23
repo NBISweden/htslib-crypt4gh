@@ -406,15 +406,17 @@ static int read_encryption_header(hFILE_crypt4gh *fp) {
     sk_name_len = strlen(sk_name) + 1;
 
     if (hread(fp->parent, buffer, 16) != 16) {
-        if (hts_verbose > 1)
+        if (hts_verbose > 1) {
             fprintf(stderr, "[E::%s] Failed to read encryption magic number\n",
                     __func__);
+        }
         return -1;
     }
     if (memcmp(buffer, MAGIC, 8) != 0) {
-        if (hts_verbose > 1)
+        if (hts_verbose > 1) {
             fprintf(stderr, "[E::%s] Incorrect magic number\n",
                     __func__);
+        }
         return -1;
     }
     if (le_to_u32(buffer + 8) != 1) {
@@ -966,8 +968,33 @@ static hFILE *hopen_crypt4gh(const char *url, const char *mode) {
 
     parent = hopen(url + len, mode);
     if (!parent) return NULL;
+    char buffer[1024];
+    if (hread(parent, buffer, 1024) < 40) {
+    fprintf(stderr, "[E::%s] failed to read htsget url (%s), the obtained buffer = %s\n",
+            __func__, url + len, buffer);
+        return NULL;
+    }
+    
+    hFILE *parent2 = NULL;
+    char *begin = strstr(buffer, "\"url\":\"");
 
-    return hopen_crypt4gh_wrapper(parent, mode);
+    if (begin == NULL) { 
+        // if the provided url points to the data file, not htsget url, use the first file handler
+        parent2 = parent;
+        if (hseek(parent2, 0, SEEK_SET) < 0) {
+            fprintf(stderr, "[E::%s] failed to reset file handler to the beginning\n",
+                    __func__);
+            return NULL;
+        }
+    } else {
+        char *end = strstr(buffer, "\",\"headers");
+        int length = end - begin;
+        char actualFileUrl[512];
+        strncpy(actualFileUrl, begin + 7, length - 7);
+        parent2 = hopen(actualFileUrl, mode);
+        if (!parent2) return NULL;
+    }
+    return hopen_crypt4gh_wrapper(parent2, mode);
 }
 
 static hFILE *vhopen_crypt4gh(const char *url, const char *mode, va_list args) {
